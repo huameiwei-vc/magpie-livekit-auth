@@ -42,6 +42,7 @@
 - [x] 11 自动发现：provider.models 先问 /v1/models，空则用本地表
 - [x] 12 额度面板：auth.usage 探针读 Credits/RPM/TPM 头 + 回退/告警提醒
 - [x] 13 回退检测：读取 X-Livekit-Inference-Llm-Model-Fallback 并告警
+- [x] 14 移除 deepseek-v4-pro（实测回退到 Gemma 4 31B）
 - [ ] 10 服务器验收（用户执行）
 
 ## 模型表（2026-11-21）
@@ -49,7 +50,6 @@
 | key | API id | context | output |
 |---|---|---|---|
 | deepseek-v4.1-flash | deepseek-ai/deepseek-v4.1-flash | 1048576 | 384000 |
-| deepseek-v4-pro | deepseek-ai/deepseek-v4-pro | 1048576 | 393216 |
 | gpt-6-luna | openai/gpt-6-luna | 1050000 | 128000 |
 | gemini-3.8-flash | google/gemini-3.8-flash | 1048576 | 65536 |
 | kimi-k2.6 | moonshotai/kimi-k2.6 | 262144 | 262144 |

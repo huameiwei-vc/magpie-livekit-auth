@@ -1,6 +1,6 @@
 {
   "name": "magpie-livekit-auth",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "LiveKit Inference as a magpie / OpenCode provider: DeepSeek, GPT, Gemini, Kimi and Grok behind one LiveKit API key",
   "type": "module",
   "main": "./index.mjs",

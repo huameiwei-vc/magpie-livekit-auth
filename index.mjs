@@ -2,7 +2,7 @@
  * magpie / OpenCode 供应商插件：LiveKit Inference
  *
  * 用一把 LiveKit API Key + Secret，在 magpie 里换来一组模型：
- * DeepSeek V4.1 Flash / V4 Pro、GPT-6 Luna、Gemini 3.8 Flash、Kimi K2.6、Grok 4.7。
+ * DeepSeek V4.1 Flash、GPT-6 Luna、Gemini 3.8 Flash、Kimi K2.6、Grok 4.7。
  *
  * 原理：LiveKit 的 key/secret 不能直接当 Bearer 令牌用，每个请求要现签一张
  * 10 分钟的 JWT（HS256，payload 里只有 inference.perform 这一个权限）。
@@ -26,13 +26,6 @@ const MODELS = {
     id: "deepseek-ai/deepseek-v4.1-flash",
     limit: { context: 1048576, input: 1048576, output: 384000 },
     variants: { low: {}, medium: {}, high: {} },
-  },
-  "deepseek-v4-pro": {
-    name: "DeepSeek V4 Pro",
-    id: "deepseek-ai/deepseek-v4-pro",
-    limit: { context: 1048576, input: 1048576, output: 393216 },
-    // 关掉思考会答错，所以不提供 none/minimal
-    variants: { low: {}, high: {}, max: {} },
   },
   "gpt-6-luna": {
     name: "GPT-6 Luna",

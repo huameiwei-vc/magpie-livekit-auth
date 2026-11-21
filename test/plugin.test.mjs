@@ -91,8 +91,8 @@ describe("normalizeBody", () => {
 });
 
 describe("模型表", () => {
-  test("六条，且 key 与 API id 分离", () => {
-    expect(Object.keys(MODELS)).toHaveLength(6);
+  test("五条，且 key 与 API id 分离", () => {
+    expect(Object.keys(MODELS)).toHaveLength(5);
     expect(MODELS["deepseek-v4.1-flash"].id).toBe("deepseek-ai/deepseek-v4.1-flash");
     expect(MODELS["kimi-k2.6"].id).toBe("moonshotai/kimi-k2.6");
   });
@@ -109,8 +109,8 @@ describe("模型表", () => {
     }
   });
 
-  test("deepseek-v4-pro 不提供关思考的档位", () => {
-    expect(Object.keys(MODELS["deepseek-v4-pro"].variants)).not.toContain("minimal");
+  test("已回退到 Gemma 的 v4-pro 不在列表里", () => {
+    expect(MODELS["deepseek-v4-pro"]).toBeUndefined();
   });
 });
 
@@ -128,7 +128,7 @@ describe("插件钩子", () => {
     await hooks.config(cfg);
     expect(cfg.provider.livekit.name).toBe("LiveKit");
     expect(cfg.provider.livekit.api).toContain("agent-gateway.livekit.cloud");
-    expect(Object.keys(cfg.provider.livekit.models)).toHaveLength(6);
+    expect(Object.keys(cfg.provider.livekit.models)).toHaveLength(5);
   });
 
   test("config 不覆盖用户已配置的供应商", async () => {
@@ -246,7 +246,7 @@ describe("provider.models", () => {
         { models: _internal.MODELS },
         { auth: { type: "api", key: "API12345678", metadata: { secret: "s".repeat(40) } } },
       );
-      expect(Object.keys(out)).toHaveLength(6);
+      expect(Object.keys(out)).toHaveLength(5);
     } finally {
       globalThis.fetch = original;
     }
@@ -255,7 +255,7 @@ describe("provider.models", () => {
   test("未登录时直接返回本地表，不发请求", async () => {
     const hooks = await plugin.server();
     const out = await hooks.provider.models({ models: _internal.MODELS }, {});
-    expect(Object.keys(out)).toHaveLength(6);
+    expect(Object.keys(out)).toHaveLength(5);
   });
 });
 
@@ -338,7 +338,7 @@ describe("模型回退告警", () => {
     try {
       await loader.fetch("https://agent-gateway.livekit.cloud/v1/chat/completions", {
         method: "POST",
-        body: JSON.stringify({ model: "deepseek-ai/deepseek-v4-pro" }),
+        body: JSON.stringify({ model: "deepseek-ai/deepseek-v4.1-flash" }),
       });
     } finally {
       globalThis.fetch = original;
@@ -350,7 +350,7 @@ describe("模型回退告警", () => {
       const out = await hooks.auth.usage(async () => account);
       const notice = out.windows.find((w) => w.name === "回退提醒");
       expect(notice).toBeDefined();
-      expect(notice.display).toContain("deepseek-ai/deepseek-v4-pro");
+      expect(notice.display).toContain("deepseek-ai/deepseek-v4.1-flash");
       expect(notice.display).toContain("gemma-4-31b-it");
       expect(notice.aside).toBe(true);
     } finally {
