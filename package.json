@@ -1,0 +1,43 @@
+{
+  "name": "magpie-livekit-auth",
+  "version": "0.1.0",
+  "description": "LiveKit Inference as a magpie / OpenCode provider: DeepSeek, GPT, Gemini, Kimi and Grok behind one LiveKit API key",
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./server": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "magpie",
+    "livekit",
+    "deepseek"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huameiwei-vc/magpie-livekit-auth.git"
+  },
+  "homepage": "https://github.com/huameiwei-vc/magpie-livekit-auth",
+  "engines": {
+    "bun": ">=1.0"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "magpie": {
+    "maxConcurrency": 5,
+    "name": "LiveKit",
+    "summary": {
+      "en": "LiveKit Inference: DeepSeek, GPT, Gemini, Kimi and Grok with one LiveKit API key.",
+      "zh": "用一个 LiveKit API Key 使用 DeepSeek、GPT、Gemini、Kimi、Grok。"
+    }
+  }
+}
