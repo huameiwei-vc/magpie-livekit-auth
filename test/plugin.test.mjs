@@ -321,3 +321,71 @@ describe("auth.usage", () => {
     }
   });
 });
+
+describe("模型回退告警", () => {
+  test("响应头说回退了，额度面板里能看到", async () => {
+    const hooks = await plugin.server();
+    const account = { type: "api", key: "API12345678", metadata: { secret: "s".repeat(40) } };
+    const loader = await hooks.auth.loader(async () => account);
+
+    const original = globalThis.fetch;
+    // 第一次：正常请求，但上游回退到了 Gemma
+    globalThis.fetch = async () =>
+      new Response("{}", {
+        status: 200,
+        headers: { "x-livekit-inference-llm-model-fallback": "google/gemma-4-31b-it" },
+      });
+    try {
+      await loader.fetch("https://agent-gateway.livekit.cloud/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify({ model: "deepseek-ai/deepseek-v4-pro" }),
+      });
+    } finally {
+      globalThis.fetch = original;
+    }
+
+    // 第二次：额度探针
+    globalThis.fetch = async () => new Response("{}", { status: 200 });
+    try {
+      const out = await hooks.auth.usage(async () => account);
+      const notice = out.windows.find((w) => w.name === "回退提醒");
+      expect(notice).toBeDefined();
+      expect(notice.display).toContain("deepseek-ai/deepseek-v4-pro");
+      expect(notice.display).toContain("gemma-4-31b-it");
+      expect(notice.aside).toBe(true);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test("429 的额度告警也会留在面板里", async () => {
+    const hooks = await plugin.server();
+    const account = { type: "api", key: "{{SECRET_nzdzmgob}}", metadata: { secret: "s".repeat(40) } };
+    const loader = await hooks.auth.loader(async () => account);
+
+    const original = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response("{}", {
+        status: 429,
+        headers: { "x-livekit-inference-quota-message": "inference credits exhausted" },
+      });
+    try {
+      await loader.fetch("https://agent-gateway.livekit.cloud/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify({ model: "deepseek-ai/deepseek-v4.1-flash" }),
+      });
+    } finally {
+      globalThis.fetch = original;
+    }
+
+    globalThis.fetch = async () => new Response("{}", { status: 200 });
+    try {
+      const out = await hooks.auth.usage(async () => account);
+      const warning = out.windows.find((w) => w.name === "上次告警");
+      expect(warning).toBeDefined();
+      expect(warning.display).toContain("credits exhausted");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});
