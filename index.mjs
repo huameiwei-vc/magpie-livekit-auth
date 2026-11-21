@@ -68,6 +68,16 @@ for (const model of Object.values(MODELS)) {
 
 const encoder = new TextEncoder();
 
+/**
+ * 最近一次"模型回退"记录，按 apiKey 存（不是按供应商，避免多账号串）。
+ * LiveKit 上游不可用时会悄悄换成别的模型，响应头会写出来；这一条就是为了
+ * 让用户看见"你点的 DeepSeek，实际可能是 Gemma"。
+ */
+const lastFallback = new Map();
+
+/** 最近一次额度/限流告警，同样按 apiKey 存 */
+const lastQuota = new Map();
+
 /** base64url（JWT 用），Bun 和 Node 都有 Buffer */
 function b64url(data) {
   const buf = typeof data === "string" ? Buffer.from(data, "utf8") : Buffer.from(data);
@@ -157,6 +167,47 @@ function normalizeBody(raw) {
   return JSON.stringify(body);
 }
 
+/** 从请求体里取模型名。用正则而不是 JSON.parse，省一次解析 */
+function modelOf(raw) {
+  if (typeof raw !== "string") return null;
+  const m = /"model"\s*:\s*"([^"]+)"/.exec(raw);
+  return m ? m[1] : null;
+}
+
+/**
+ * 把上游目录合并进来。
+ * - 目录为空（今天的实际情况，/v1/models 返回 {}）→ 保持原表
+ * - 有目录 → 丢掉已下架的、保留已知模型的元数据、补上不认识的新模型
+ */
+function mergeListedModels(known, ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return known;
+
+  const listed = new Set(ids);
+  const out = {};
+  for (const [key, model] of Object.entries(known)) {
+    if (listed.has(model.id)) out[key] = model;
+  }
+
+  const knownIds = new Set(Object.values(known).map((m) => m.id));
+  for (const id of ids) {
+    if (knownIds.has(id)) continue;
+    const key = String(id).split("/").pop() || id;
+    if (out[key]) continue;
+    // 上游没给窗口大小，只能给个保守值；至少模型能用
+    out[key] = {
+      name: key,
+      id,
+      limit: { context: 128000, input: 128000, output: 32000 },
+      reasoning: false,
+      tool_call: true,
+      variants: {},
+      modalities: { input: ["text"], output: ["text"] },
+    };
+  }
+
+  return Object.keys(out).length ? out : known;
+}
+
 /** magpie 的供应商声明：没人登录时也要有模型可选 */
 async function config(cfg) {
   cfg.provider ??= {};
@@ -241,17 +292,162 @@ const auth = {
         const body = normalizeBody(init.body);
         debugBody(input, body);
 
-        return fetch(input, { ...init, headers, body });
+        const res = await fetch(input, { ...init, headers, body });
+
+        if (!res.ok && (res.status === 429 || res.status === 402)) {
+          const message = res.headers.get("x-livekit-inference-quota-message");
+          const category = res.headers.get("x-livekit-inference-quota-category");
+          lastQuota.set(apiKey, { at: Date.now(), status: res.status, message, category });
+          console.warn(
+            `[livekit] ${res.status} ${message ?? "额度或频率受限"}${category ? ` (${category})` : ""}`,
+          );
+        }
+
+        const served = res.headers.get("x-livekit-inference-llm-model-fallback");
+        if (served) {
+          const requested = modelOf(body) ?? "?";
+          lastFallback.set(apiKey, { at: Date.now(), model: requested, served });
+          console.warn(
+            `[livekit] ${requested} 实际由 ${served} 服务（LiveKit 自动回退，不是故障）`,
+          );
+        }
+
+        return res;
       },
     };
   },
+
+  /**
+   * magpie 的额度面板。
+   * LiveKit 没有余额接口（/v1/models 返回 {}），所以这里发一个
+   * max_completion_tokens=1 的探针，从响应头读 LiveKit 自己公布的数字：
+   *   X-Livekit-Inference-Credits-Limit / -Used      （有才是真余额）
+   *   X-Livekit-Inference-Rpm-Limit / -Tpm-Limit     （限速，总是有）
+   * 探针一次约 10 个 token，可以忽略。
+   */
+  async usage(getAuth) {
+    const account = await getAuth();
+    if (account?.type !== "api" || !account.metadata?.secret) return { windows: [] };
+
+    const apiKey = account.key;
+    const windows = [];
+
+    try {
+      const token = await signToken(apiKey, account.metadata.secret);
+      const res = await fetch(`${BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: MODELS["deepseek-v4.1-flash"].id,
+          messages: [{ role: "user", content: "hi" }],
+          max_completion_tokens: 1,
+        }),
+      });
+
+      if (res.status === 401) return { error: "登录失效，请重新登录", windows: [] };
+
+      const num = (name) => {
+        const v = res.headers.get(name);
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+
+      const creditLimit = num("x-livekit-inference-credits-limit");
+      const creditUsed = num("x-livekit-inference-credits-used");
+
+      if (creditLimit != null && creditUsed != null && creditLimit > 0) {
+        windows.push({
+          name: "推理额度",
+          used: Math.min(999, Math.round((creditUsed / creditLimit) * 100)),
+          display: `${creditUsed} / ${creditLimit}`,
+          amount: creditUsed,
+          limit: creditLimit,
+          unit: "credits",
+        });
+      } else {
+        windows.push({
+          name: "推理额度",
+          display: "LiveKit 不公开余额，控制台查看",
+        });
+      }
+
+      const rpm = num("x-livekit-inference-rpm-limit");
+      const tpm = num("x-livekit-inference-tpm-limit");
+      if (rpm != null || tpm != null) {
+        windows.push({
+          name: "限速",
+          display: [rpm != null && `${rpm} 次/分`, tpm != null && `${tpm} tok/分`]
+            .filter(Boolean)
+            .join(" · "),
+        });
+      }
+    } catch (err) {
+      return { error: `查额度失败：${err?.message ?? err}`, windows: [] };
+    }
+
+    const quota = lastQuota.get(apiKey);
+    if (quota && Date.now() - quota.at < 6 * 60 * 60 * 1000) {
+      const ago = Math.round((Date.now() - quota.at) / 60000);
+      windows.unshift({
+        name: "上次告警",
+        display: `${quota.status} ${quota.message ?? "额度或频率受限"}（${ago} 分钟前）`,
+        aside: true,
+      });
+    }
+
+    const note = lastFallback.get(apiKey);
+    if (note && Date.now() - note.at < 30 * 60 * 1000) {
+      windows.push({
+        name: "回退提醒",
+        display: `${note.model} 上次实际由 ${note.served} 服务`,
+        aside: true,
+      });
+    }
+
+    return { plan: "Build", windows };
+  },
 };
 
-const server = async () => ({ config, auth });
+/** 每个账号跑一次 provider.models：上游愿意给目录就用目录 */
+const provider = {
+  id: PROVIDER,
+  async models(providerConfig, ctx = {}) {
+    const known = providerConfig?.models ?? MODELS;
+    const account = ctx.auth;
+    if (account?.type !== "api" || !account.metadata?.secret) return known;
+
+    try {
+      const token = await signToken(account.key, account.metadata.secret);
+      const res = await fetch(`${BASE_URL}/models`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return known;
+      const payload = await res.json().catch(() => null);
+      const ids = Array.isArray(payload?.data)
+        ? payload.data.map((m) => m?.id).filter(Boolean)
+        : [];
+      return mergeListedModels(known, ids);
+    } catch {
+      return known;
+    }
+  },
+};
+
+const server = async () => ({ config, auth, provider });
 
 // 只导出 default 对象（OpenCode v1 形式）。
 // 注意：不要再导出别的函数，否则 magpie 会把每个导出函数都当成一个插件去加载。
 export default { id: "livekit", server };
 
 /** 单元测试用的口子（magpie 只把导出的函数当插件，对象不受影响） */
-export const _internal = { signToken, normalizeBody, b64url, MODELS, PROVIDER, BASE_URL };
+export const _internal = {
+  signToken,
+  normalizeBody,
+  b64url,
+  modelOf,
+  mergeListedModels,
+  MODELS,
+  PROVIDER,
+  BASE_URL,
+};

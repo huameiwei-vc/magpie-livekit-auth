@@ -197,3 +197,127 @@ describe("插件钩子", () => {
     expect(b64url("\u00ff\u00fe" + "abc")).not.toMatch(/[+/=]/);
   });
 });
+
+describe("modelOf", () => {
+  test("取出请求体里的模型名", () => {
+    expect(_internal.modelOf('{"model":"openai/gpt-6-luna","stream":true}')).toBe("openai/gpt-6-luna");
+  });
+
+  test("没有 model 时返回 null", () => {
+    expect(_internal.modelOf('{"messages":[]}')).toBeNull();
+    expect(_internal.modelOf(undefined)).toBeNull();
+  });
+});
+
+describe("mergeListedModels", () => {
+  const { mergeListedModels, MODELS } = _internal;
+
+  test("目录为空时保持原表（今天的真实情况）", () => {
+    expect(mergeListedModels(MODELS, [])).toBe(MODELS);
+    expect(mergeListedModels(MODELS, null)).toBe(MODELS);
+  });
+
+  test("目录里有的保留，已下架的丢掉", () => {
+    const out = mergeListedModels(MODELS, ["deepseek-ai/deepseek-v4.1-flash"]);
+    expect(Object.keys(out)).toEqual(["deepseek-v4.1-flash"]);
+  });
+
+  test("目录里的新模型被补进来，带保守上限", () => {
+    const out = mergeListedModels(MODELS, ["deepseek-ai/deepseek-v4.1-flash", "acme/next-model"]);
+    expect(out["next-model"]).toBeDefined();
+    expect(out["next-model"].id).toBe("acme/next-model");
+    expect(out["next-model"].limit.context).toBe(128000);
+  });
+
+  test("目录和已知表完全不交集时，仍保留原表", () => {
+    const out = mergeListedModels(MODELS, ["nothing/at-all"]);
+    expect(out["at-all"]).toBeDefined();
+    expect(Object.keys(out).length).toBe(1);
+  });
+});
+
+describe("provider.models", () => {
+  test("上游目录为空时用本地表", async () => {
+    const hooks = await plugin.server();
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => new Response("{}", { status: 200 });
+    try {
+      const out = await hooks.provider.models(
+        { models: _internal.MODELS },
+        { auth: { type: "api", key: "API12345678", metadata: { secret: "s".repeat(40) } } },
+      );
+      expect(Object.keys(out)).toHaveLength(6);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test("未登录时直接返回本地表，不发请求", async () => {
+    const hooks = await plugin.server();
+    const out = await hooks.provider.models({ models: _internal.MODELS }, {});
+    expect(Object.keys(out)).toHaveLength(6);
+  });
+});
+
+describe("auth.usage", () => {
+  test("读响应头里的额度与限速", async () => {
+    const hooks = await plugin.server();
+    const original = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response("{}", {
+        status: 200,
+        headers: {
+          "x-livekit-inference-credits-limit": "2.5",
+          "x-livekit-inference-credits-used": "0.75",
+          "x-livekit-inference-rpm-limit": "100",
+          "x-livekit-inference-tpm-limit": "600000",
+        },
+      });
+    try {
+      const out = await hooks.auth.usage(async () => ({
+        type: "api",
+        key: "API12345678",
+        metadata: { secret: "s".repeat(40) },
+      }));
+      const credit = out.windows.find((w) => w.name === "推理额度");
+      expect(credit.used).toBe(30);
+      expect(credit.display).toBe("0.75 / 2.5");
+      expect(out.windows.find((w) => w.name === "限速").display).toContain("100 次/分");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test("没有额度头时，明说不公开余额", async () => {
+    const hooks = await plugin.server();
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => new Response("{}", { status: 200 });
+    try {
+      const out = await hooks.auth.usage(async () => ({
+        type: "api",
+        key: "API12345678",
+        metadata: { secret: "s".repeat(40) },
+      }));
+      expect(out.windows[0].display).toContain("不公开余额");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test("401 时提示重新登录", async () => {
+    const hooks = await plugin.server();
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => new Response("{}", { status: 401 });
+    try {
+      const out = await hooks.auth.usage(async () => ({
+        type: "api",
+        key: "API12345678",
+        metadata: { secret: "s".repeat(40) },
+      }));
+      expect(out.error).toContain("登录失效");
+      expect(out.windows).toEqual([]);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

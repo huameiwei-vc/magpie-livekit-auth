@@ -52,6 +52,64 @@ Two of them need care, and the plugin already handles both:
   and then says nothing. The plugin raises any Kimi request below 8,000 tokens to 8,000.
 - **DeepSeek V4 Pro** gets worse with thinking turned off, so no `minimal` level is offered.
 
+## Thinking content
+
+Whether a model's reasoning text comes back depends on the model, not on the plugin:
+
+| Model | Thinking text returned? | Field |
+|---|---|---|
+| `deepseek-v4.1-flash` | **yes** | `reasoning_content` |
+| `kimi-k2.6` | **yes** | `reasoning` + `reasoning_details` |
+| `deepseek-v4-pro` | yes, but see the fallback warning below | `reasoning_content` |
+| `gpt-6-luna` | no — only `reasoning_tokens` in usage | — |
+| `gemini-3.8-flash` | no — only `reasoning_tokens` in usage | — |
+| `grok-4.7` | no — only `reasoning_tokens` in usage | — |
+
+The gateway passes both fields through, on streaming and non-streaming requests, and magpie
+understands both — so a client that renders thinking will show it for the first three.
+The other three still think (you can see the tokens in usage), they just do not return the text.
+
+## The model can silently become a different model
+
+This one matters. LiveKit falls back to another model when the one you asked for is not
+available, and it does **not** fail the request. The response says so in a header:
+
+```
+X-Livekit-Inference-Llm-Model-Fallback: google/gemma-4-31b-it
+```
+
+Asked for `deepseek-v4-pro` on 2026-11-21 and this is what came back — Gemma 4 31B
+answering in DeepSeek's place. That is why it can feel "not really DeepSeek".
+
+The plugin does two things about it:
+
+- logs a warning to magpie's log: `[livekit] … 实际由 … 服务（LiveKit 自动回退）`
+- keeps the last one for 30 minutes and shows it in `magpie quota livekit` as a
+  **回退提醒** row
+
+If a model falls back often, stop using it — `deepseek-v4-pro` did on the day this was written.
+
+## Remaining credits: what can and cannot be shown
+
+There is no API for the `$2.50` balance. `/v1/models` returns `{}`, and the LiveKit
+Cloud API has no usage or credits resource. The plugin asks anyway, on every quota refresh
+(one `max_completion_tokens: 1` request, about ten tokens):
+
+- **if** LiveKit ever starts sending `X-Livekit-Inference-Credits-Limit` / `-Used`,
+  `magpie quota livekit` shows a real `used / limit` window with a percentage, with no
+  change needed here
+- **today** it shows `LiveKit 不公开余额，控制台查看`, the real rate limits
+  (`RPM` / `TPM`), and the last fallback or quota warning it saw
+
+So: rate limits — yes; remaining credits — only in the console.
+
+## Automatic model discovery
+
+`magpie provider models` asks `/v1/models` first. If it ever lists models, the plugin
+uses that list: models that disappeared are dropped, new ones are added with conservative
+limits (128k context, 32k output) until their real numbers are known. While the listing is
+empty — which is the case today — the static table above is used unchanged.
+
 ## Read this before you use it for real work
 
 **The $2.50 is a trial allowance, not a plan.** LiveKit's Build plan includes

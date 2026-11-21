@@ -39,6 +39,9 @@
 - [x] 7 实测消息体：确认 magpie 把 variant 编成什么字段
 - [x] 8 README
 - [x] 9 上 GitHub + v0.1.0
+- [x] 11 自动发现：provider.models 先问 /v1/models，空则用本地表
+- [x] 12 额度面板：auth.usage 探针读 Credits/RPM/TPM 头 + 回退/告警提醒
+- [x] 13 回退检测：读取 X-Livekit-Inference-Llm-Model-Fallback 并告警
 - [ ] 10 服务器验收（用户执行）
 
 ## 模型表（2026-11-21）
