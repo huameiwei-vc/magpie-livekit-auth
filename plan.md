@@ -17,7 +17,7 @@
 ## 文件
 
 ```
-/Users/songchao/Desktop/PI/逆向/magpie-livekit-auth/
+magpie-livekit-auth/
 ├── plan.md              本文件
 ├── package.json         包清单 + magpie 字段
 ├── index.mjs            唯一入口，零依赖
