@@ -179,7 +179,7 @@ describe("插件钩子", () => {
     const hooks = await plugin.server();
     const loader = await hooks.auth.loader(async () => ({
       type: "api",
-      key: "API12345678",
+      key: "testkey123",
       metadata: { secret: "s".repeat(40) },
     }));
     expect(loader.baseURL).toContain("agent-gateway");
@@ -210,7 +210,7 @@ describe("插件钩子", () => {
   test("loader 没有 secret 时抛出 signIn expired", async () => {
     const hooks = await plugin.server();
     await expect(
-      hooks.auth.loader(async () => ({ type: "api", key: "API12345678" })),
+      hooks.auth.loader(async () => ({ type: "api", key: "testkey123" })),
     ).rejects.toMatchObject({ signIn: "expired" });
   });
 
@@ -267,7 +267,7 @@ describe("provider.models", () => {
     try {
       const out = await hooks.provider.models(
         { models: _internal.MODELS },
-        { auth: { type: "api", key: "API12345678", metadata: { secret: "s".repeat(40) } } },
+        { auth: { type: "api", key: "testkey123", metadata: { secret: "s".repeat(40) } } },
       );
       expect(Object.keys(out)).toHaveLength(5);
     } finally {
@@ -299,7 +299,7 @@ describe("auth.usage", () => {
     try {
       const out = await hooks.auth.usage(async () => ({
         type: "api",
-        key: "API12345678",
+        key: "testkey123",
         metadata: { secret: "s".repeat(40) },
       }));
       const credit = out.windows.find((w) => w.name === "推理额度");
@@ -318,7 +318,7 @@ describe("auth.usage", () => {
     try {
       const out = await hooks.auth.usage(async () => ({
         type: "api",
-        key: "API12345678",
+        key: "testkey123",
         metadata: { secret: "s".repeat(40) },
       }));
       expect(out.windows[0].display).toContain("不公开余额");
@@ -334,7 +334,7 @@ describe("auth.usage", () => {
     try {
       const out = await hooks.auth.usage(async () => ({
         type: "api",
-        key: "API12345678",
+        key: "testkey123",
         metadata: { secret: "s".repeat(40) },
       }));
       expect(out.error).toContain("登录失效");
@@ -348,7 +348,7 @@ describe("auth.usage", () => {
 describe("模型回退告警", () => {
   test("响应头说回退了，额度面板里能看到", async () => {
     const hooks = await plugin.server();
-    const account = { type: "api", key: "API12345678", metadata: { secret: "s".repeat(40) } };
+    const account = { type: "api", key: "testkey123", metadata: { secret: "s".repeat(40) } };
     const loader = await hooks.auth.loader(async () => account);
 
     const original = globalThis.fetch;
@@ -383,7 +383,7 @@ describe("模型回退告警", () => {
 
   test("429 的额度告警也会留在面板里", async () => {
     const hooks = await plugin.server();
-    const account = { type: "api", key: "{{SECRET_nzdzmgob}}", metadata: { secret: "s".repeat(40) } };
+    const account = { type: "api", key: "APIabc12345", metadata: { secret: "s".repeat(40) } };
     const loader = await hooks.auth.loader(async () => account);
 
     const original = globalThis.fetch;
