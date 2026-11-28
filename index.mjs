@@ -19,36 +19,49 @@ const BASE_URL = "https://agent-gateway.livekit.cloud/v1";
 const TOKEN_TTL_SEC = 600; // 10 分钟，够一次请求链
 const KIMI_MIN_BUDGET = 8000;
 
-/** 模型表：key 是 magpie 里显示的名字，id 是真正发给网关的名字 */
+/**
+ * 模型表：key 是 magpie 里显示的名字，id 是真正发给网关的名字。
+ *
+ * cost 是 LiveKit Inference 价目表上的价格，美元/百万 token，四项缺一不可；
+ * magpie 靠它算每次调用的花费，不写就全按 0 算。抓取日期 2026-11-28，
+ * 来源 https://livekit.com/pricing/inference —— LiveKit 调价时改这里。
+ * 思考 token 按输出价计费（LiveKit 的 completion_tokens 已包含它）。
+ * Kimi 的缓存读取价 LiveKit 标 N/A，按 0 记。
+ */
 const MODELS = {
   "deepseek-v4.1-flash": {
     name: "DeepSeek V4.1 Flash",
     id: "deepseek-ai/deepseek-v4.1-flash",
     limit: { context: 1048576, input: 1048576, output: 384000 },
+    cost: { input: 0.3, output: 1.2, cache_read: 0.007, cache_write: 0 },
     variants: { low: {}, medium: {}, high: {} },
   },
   "gpt-6-luna": {
     name: "GPT-6 Luna",
     id: "openai/gpt-6-luna",
     limit: { context: 1050000, input: 1050000, output: 128000 },
+    cost: { input: 0.1, output: 0.5, cache_read: 0.01, cache_write: 0 },
     variants: { minimal: {}, low: {}, medium: {}, high: {} },
   },
   "gemini-3.8-flash": {
     name: "Gemini 3.8 Flash",
     id: "google/gemini-3.8-flash",
     limit: { context: 1048576, input: 1048576, output: 65536 },
+    cost: { input: 0.75, output: 3.75, cache_read: 0.075, cache_write: 0 },
     variants: { low: {}, medium: {}, high: {} },
   },
   "kimi-k2.6": {
     name: "Kimi K2.6",
     id: "moonshotai/kimi-k2.6",
     limit: { context: 262144, input: 262144, output: 262144 },
+    cost: { input: 0.95, output: 4, cache_read: 0, cache_write: 0 },
     variants: { low: {}, medium: {}, high: {} },
   },
   "grok-4.7": {
     name: "Grok 4.7",
     id: "xai/grok-4.7",
     limit: { context: 524288, input: 524288, output: 131072 },
+    cost: { input: 2, output: 6, cache_read: 0.5, cache_write: 0 },
     variants: { low: {}, medium: {}, high: {} },
   },
 };
@@ -186,7 +199,8 @@ function mergeListedModels(known, ids) {
     if (knownIds.has(id)) continue;
     const key = String(id).split("/").pop() || id;
     if (out[key]) continue;
-    // 上游没给窗口大小，只能给个保守值；至少模型能用
+    // 上游没给窗口大小，只能给个保守值；至少模型能用。
+    // 价格也不写：不知道就留给 magpie 按 models.dev 的价格算，好过写 0 当免费
     out[key] = {
       name: key,
       id,

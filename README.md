@@ -45,6 +45,30 @@ LiveKit retires models regularly — if one stops answering, check
 
 All five support tool calling, which is what coding agents rely on.
 
+### What they cost
+
+LiveKit publishes a per-model price, and the plugin carries it so magpie can show what each
+request costs. USD per million tokens, taken from
+[livekit.com/pricing/inference](https://livekit.com/pricing/inference) on **2026-11-28**:
+
+| Model | Input | Cached input | Output |
+|---|---|---|---|
+| `deepseek-v4.1-flash` | $0.300 | $0.007 | $1.200 |
+| `gpt-6-luna` | $0.100 | $0.010 | $0.500 |
+| `gemini-3.8-flash` | $0.750 | $0.075 | $3.750 |
+| `kimi-k2.6` | $0.950 | N/A | $4.000 |
+| `grok-4.7` | $2.000 | $0.500 | $6.000 |
+
+These are list prices, so the dollar figure magpie shows is an estimate of what LiveKit will
+charge — not a reading of your balance. LiveKit bills thinking tokens at the output rate, and
+the gateway's `completion_tokens` already includes them, so visible and invisible reasoning are
+both counted.
+
+Prices change. When LiveKit updates its table, edit `cost` in `MODELS` (four numbers, all
+required; `0` means free, and a missing one understates the bill). A model discovered from
+`/v1/models` is left without a price on purpose, so magpie falls back to models.dev instead of
+counting it as free.
+
 Two of them need care, and the plugin already handles both:
 
 - **Kimi K2.6** spends its whole output budget on thinking when the budget is small,
@@ -92,9 +116,12 @@ If a model falls back often, stop using it. That is exactly what happened to
 
 ## Remaining credits: what can and cannot be shown
 
-There is no API for the `$2.50` balance. `/v1/models` returns `{}`, and the LiveKit
-Cloud API has no usage or credits resource. The plugin asks anyway, on every quota refresh
-(one `max_completion_tokens: 1` request, about ten tokens):
+**What each request costs: yes.** The plugin gives every model its LiveKit price, so magpie can
+add up the tokens of a session and show a dollar estimate (see “What they cost” above).
+
+**What is left of the $2.50: no.** There is no API for the balance. `/v1/models` returns `{}`, and
+the LiveKit Cloud API has no usage or credits resource. The plugin asks anyway, on every quota
+refresh (one `max_completion_tokens: 1` request, about ten tokens):
 
 - **if** LiveKit ever starts sending `X-Livekit-Inference-Credits-Limit` / `-Used`,
   `magpie quota livekit` shows a real `used / limit` window with a percentage, with no
@@ -161,6 +188,7 @@ Then read `magpie log -f` (or the log file) for lines starting with `plugin: [li
 | `404 Error getting model definition` | The model id is no longer served. Check the models list above. |
 | `429` | Credits used up, or more than 5 requests at once. |
 | Empty reply from Kimi | Output budget under 8,000 — the plugin fixes this, so please report it if you still see it. |
+| Cost shows `0` for a LiveKit model | Its `cost` is missing or stale. Update `MODELS` in `index.mjs` from LiveKit's price table. |
 | `400 Unsupported parameter: 'max_tokens'` | A client sent the old field name on an `openai/*` model. The plugin converts it; report if it still happens. |
 
 ## Test it
@@ -169,8 +197,9 @@ Then read `magpie log -f` (or the log file) for lines starting with `plugin: [li
 bun test
 ```
 
-Covers token signing (shape, TTL, signature length), request rewriting, the model table,
-and the plugin hooks — including that the loader overrides a stale `Authorization` header.
+Covers token signing (shape, TTL, signature length), request rewriting, the model table
+(including a price on every model), and the plugin hooks — including that the loader overrides a
+stale `Authorization` header.
 
 ## License
 

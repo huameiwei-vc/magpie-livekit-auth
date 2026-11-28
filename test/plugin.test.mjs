@@ -109,6 +109,27 @@ describe("模型表", () => {
     }
   });
 
+  test("每条都有四项价格（USD/百万 token），缓存读不高于输入价", () => {
+    for (const [key, m] of Object.entries(MODELS)) {
+      expect(m.cost).toBeDefined();
+      for (const field of ["input", "output", "cache_read", "cache_write"]) {
+        expect(typeof m.cost[field]).toBe("number");
+        expect(m.cost[field]).toBeGreaterThanOrEqual(0);
+      }
+      expect(m.cost.output).toBeGreaterThan(0);
+      expect(m.cost.cache_read).toBeLessThanOrEqual(m.cost.input);
+      if (!key) throw new Error("unreachable");
+    }
+  });
+
+  test("价格与 LiveKit 价目表一致（2026-11-28）", () => {
+    expect(MODELS["gemini-3.8-flash"].cost).toEqual({ input: 0.75, output: 3.75, cache_read: 0.075, cache_write: 0 });
+    expect(MODELS["deepseek-v4.1-flash"].cost).toEqual({ input: 0.3, output: 1.2, cache_read: 0.007, cache_write: 0 });
+    expect(MODELS["kimi-k2.6"].cost.input).toBe(0.95);
+    expect(MODELS["grok-4.7"].cost.cache_read).toBe(0.5);
+    expect(MODELS["gpt-6-luna"].cost.output).toBe(0.5);
+  });
+
   test("已回退到 Gemma 的 v4-pro 不在列表里", () => {
     expect(MODELS["deepseek-v4-pro"]).toBeUndefined();
   });
@@ -222,11 +243,13 @@ describe("mergeListedModels", () => {
     expect(Object.keys(out)).toEqual(["deepseek-v4.1-flash"]);
   });
 
-  test("目录里的新模型被补进来，带保守上限", () => {
+  test("目录里的新模型被补进来，带保守上限，但不瞎标价格", () => {
     const out = mergeListedModels(MODELS, ["deepseek-ai/deepseek-v4.1-flash", "acme/next-model"]);
     expect(out["next-model"]).toBeDefined();
     expect(out["next-model"].id).toBe("acme/next-model");
     expect(out["next-model"].limit.context).toBe(128000);
+    // 价格未知就不写，让 magpie 去查 models.dev，而不是按 0 当免费算
+    expect(out["next-model"].cost).toBeUndefined();
   });
 
   test("目录和已知表完全不交集时，仍保留原表", () => {
