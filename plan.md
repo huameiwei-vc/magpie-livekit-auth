@@ -14,6 +14,17 @@
 - `X-LiveKit-Inference-Provider` 可固定上游，但只对部分组合有效且无回退 → **不使用**
 - 网关不校验 `max_completion_tokens` 上界 → 数字必须写死
 
+后端与参数实测（2026-11-28，从响应里的 `extra_content.livekit.inference_deployment` 读到）：
+
+- 后端：gemini → `standard_aistudio` / `standard_vertex`（同一模型按请求切换）；deepseek →
+  `standard_baseten`；kimi → `standard_vercel`；gpt-6-luna → `openai_eu`；grok → `standard_xai`
+- 采样参数被选择性丢弃：`temperature` 3.0 / -1.0（越界）不报错 → 被丢；
+  `frequency_penalty` 9 报 Google 原文 400 → 被转发
+- 静默回退仍在：请求 `deepseek-v4-pro` 返回 200，实际由 `google/gemma-4-31B-it` 回答
+  （后端 `livekit_gemma_banana_echo`，LiveKit 自托管）
+- 长上下文未截断：约 1.3 万 token 的系统提示，开头/结尾暗号都能复述
+- 思考深度未被卡：同一难题 low/medium/high 分别 210 / 427 / 796 个思考 token
+
 ## 文件
 
 ```
